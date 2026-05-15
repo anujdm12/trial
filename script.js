@@ -23,6 +23,8 @@
 let countdownInterval = null;
 let audioAutoplayFailed = false;
 let audioRetryTimer = null;
+let audioFallbackAttached = false;
+let autoplayRetryCount = 0;
 let birthdaySequenceStarted = false;
 let countdownStartTarget = null;
 let previousSecondValue = null;
@@ -295,7 +297,10 @@ function prepareAudio(audio, volume = 0.82, loop = true) {
   if (!audio) return;
   audio.volume = volume;
   audio.loop = loop;
+  audio.autoplay = true;
   audio.preload = 'auto';
+  audio.setAttribute('autoplay', '');
+  audio.setAttribute('playsinline', '');
 }
 
 function prepareBirthdayAudio() {
@@ -311,11 +316,22 @@ function syncMusicUi() {
 }
 
 function queueAudioRetry() {
-  if (audioRetryTimer || !birthdayAudio || !birthdayAudio.paused) return;
+  if (audioRetryTimer || autoplayRetryCount >= 10) return;
   audioRetryTimer = window.setTimeout(() => {
     audioRetryTimer = null;
+    autoplayRetryCount += 1;
+    attemptPlayActiveAudio();
+  }, 900);
+}
+
+function attemptPlayActiveAudio() {
+  if (bellaCiaoAudio && !birthdaySequenceStarted) {
+    attemptPlayBellaCiaoAudio();
+  }
+
+  if (birthdayAudio) {
     attemptPlayBirthdayAudio();
-  }, 1500);
+  }
 }
 
 function attemptPlayBirthdayAudio() {
@@ -341,17 +357,16 @@ function attemptPlayBirthdayAudio() {
 }
 
 function enableAudioFallback() {
-  const events = ['click', 'touchstart', 'keypress', 'pointerdown'];
+  if (audioFallbackAttached) return;
+  audioFallbackAttached = true;
+  const events = ['click', 'touchstart', 'keydown', 'keypress', 'pointerdown', 'pointerup'];
   const playAudioOnce = () => {
-    if (bellaCiaoAudio && bellaCiaoAudio.paused) {
-      attemptPlayBellaCiaoAudio();
-    }
-    if (birthdayAudio && birthdayAudio.paused) {
-      attemptPlayBirthdayAudio();
-    }
-    events.forEach(evt => document.removeEventListener(evt, playAudioOnce));
+    autoplayRetryCount = 0;
+    attemptPlayActiveAudio();
+    events.forEach(evt => document.removeEventListener(evt, playAudioOnce, true));
+    audioFallbackAttached = false;
   };
-  events.forEach(evt => document.addEventListener(evt, playAudioOnce, { once: true }));
+  events.forEach(evt => document.addEventListener(evt, playAudioOnce, { once: true, capture: true }));
 }
 
 
@@ -365,6 +380,7 @@ function startBellaCiaoAudio() {
       p.catch(() => {
         // autoplay blocked — wait for user interaction
         enableAudioFallback();
+        queueAudioRetry();
       });
     }
   }
@@ -379,6 +395,7 @@ function attemptPlayBellaCiaoAudio() {
       // OK
     }).catch(() => {
       enableAudioFallback();
+      queueAudioRetry();
     });
   }
 }
@@ -472,9 +489,17 @@ function initializeApp() {
   // try to start Bella Ciao immediately (may be blocked until user interaction)
   attemptPlayBellaCiaoAudio();
   enableAudioFallback();
+  queueAudioRetry();
 }
 
 window.addEventListener('DOMContentLoaded', initializeApp);
+window.addEventListener('pageshow', attemptPlayActiveAudio);
+window.addEventListener('focus', attemptPlayActiveAudio);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    attemptPlayActiveAudio();
+  }
+});
 
 
 // Only attach music UI sync events, not auto-play events
