@@ -1,0 +1,12 @@
+{
+  "name": "birthdayk",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Static birthday countdown surprise site.",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
